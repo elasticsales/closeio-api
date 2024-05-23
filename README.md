@@ -36,6 +36,44 @@ lead_results = api.get('lead', params={
 
 Check out [https://github.com/closeio/closeio-api-scripts](https://github.com/closeio/closeio-api-scripts) for helpful scripts already written to accomplish some common tasks.
 
+
+### Contributions
+We welcome contributions to this project! To get started, follow these steps to set up your environment:
+
+- Fork the repository
+
+- Create a virtual environment
+```sh
+python3 -m venv venv
+source source venv/bin/activate
+```
+- Install dependencies
+```sh
+pip install -r requirements.txt
+```
+
+- Install `tox` for development purposes
+```sh
+pip install tox
+```
+
+- Run `tox` to execute tests, type checks, and formatters
+```sh
+tox
+```
+    - To run only tests:
+```sh
+tox -e py
+```
+    - To run only the formatter:
+```sh
+tox -e format
+```
+    - To run only type checks with mypy:
+```sh
+tox -e mypy
+```
+
 ### Other Languages
 
 There are unofficial API clients available in other languages too, thanks to some awesome contributors:

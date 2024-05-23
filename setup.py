@@ -1,5 +1,6 @@
 import io
 import re
+
 from setuptools import setup
 
 VERSION_FILE = "closeio_api/__init__.py"
@@ -8,15 +9,13 @@ with io.open(VERSION_FILE, "rt", encoding="utf8") as f:
 
 setup(
     name="closeio",
-    packages=['closeio_api'],
+    packages=["closeio_api"],
     version=version,
     description="Close API Python Client",
     long_description="Close API Python Client",
     author="Close Team",
     url="https://github.com/closeio/closeio-api/",
-    install_requires=[
-        'requests >= 2.11.1'
-    ],
+    install_requires=["requests >= 2.11.1"],
     classifiers=[
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
@@ -25,5 +24,5 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Operating System :: OS Independent",
-    ]
+    ],
 )

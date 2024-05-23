@@ -15,10 +15,13 @@ defaults: &defaults
   - checkout
   - run:
       name: Install dependencies
-      command: pip install -r requirements.txt
+      command: pip install tox
   - run:
       name: Test
-      command: pytest
+      command: tox -e py
+  - run:
+      name: Mypy
+      command: tox -e mypy
 
 jobs:
   test-3.7:

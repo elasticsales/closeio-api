@@ -2,23 +2,26 @@ import contextlib
 import logging
 import re
 import time
-
 from random import uniform
+from typing import Any, Dict, Literal, Optional, Union
 
 import requests
 
 from closeio_api.utils import local_tz_offset
 
-DEFAULT_RATE_LIMIT_DELAY = 2   # Seconds
+RequestMethod = Literal["get", "post", "put", "patch", "delete"]
+
+DEFAULT_RATE_LIMIT_DELAY = 2  # Seconds
 
 # To update the package version, change this variable. This variable is also
 # read by setup.py when installing the package.
-__version__ = '2.1'
+__version__ = "2.1"
+
 
 class APIError(Exception):
     """Raised when sending a request to the API failed."""
 
-    def __init__(self, response):
+    def __init__(self, response: requests.Response) -> None:
         # For compatibility purposes we can access the original string through
         # the args property.
         super(APIError, self).__init__(response.text)
@@ -28,20 +31,26 @@ class APIError(Exception):
 class ValidationError(APIError):
     """Raised when the API returns validation errors."""
 
-    def __init__(self, response):
+    def __init__(self, response: requests.Response) -> None:
         super(ValidationError, self).__init__(response)
 
         # Easy access to errors.
-        data = response.json()
-        self.errors = data.get('errors', [])
-        self.field_errors = data.get('field-errors', {})
+        data: Dict[Any, Any] = response.json()
+        self.errors = data.get("errors", [])
+        self.field_errors = data.get("field-errors", {})
 
 
 class API(object):
     """Main class interacting with the Close API."""
 
-    def __init__(self, base_url, api_key=None, tz_offset=None, max_retries=5,
-                 verify=True):
+    def __init__(
+        self,
+        base_url: str,
+        api_key: Optional[str] = None,
+        tz_offset: Optional[str] = None,
+        max_retries: int = 5,
+        verify: bool = True,
+    ) -> None:
         assert base_url
         self.base_url = base_url
         self.max_retries = max_retries
@@ -50,40 +59,41 @@ class API(object):
 
         self.session = requests.Session()
         if api_key:
-            self.session.auth = (api_key, '')
+            self.session.auth = (api_key, "")
 
-        self.session.headers.update({
-            'User-Agent': 'Close/{} python ({})'.format(
-                __version__,
-                requests.utils.default_user_agent()
-            ),
-            'X-TZ-Offset': self.tz_offset
-        })
+        self.session.headers.update(
+            {
+                "User-Agent": "Close/{} python ({})".format(
+                    __version__, requests.utils.default_user_agent()
+                ),
+                "X-TZ-Offset": self.tz_offset,
+            }
+        )
 
-    def _prepare_request(self, method_name, endpoint, api_key=None, data=None,
-                         debug=False, **kwargs):
+    def _prepare_request(
+        self,
+        method_name: RequestMethod,
+        endpoint: str,
+        api_key: Optional[str] = None,
+        data: Optional[Dict[Any, Any]] = None,
+        debug: bool = False,
+        **kwargs: Any
+    ) -> requests.PreparedRequest:
         """Construct and return a requests.Request object based on
         provided parameters.
         """
         if api_key:
-            auth = (api_key, '')
+            auth = (api_key, "")
         else:
             auth = None
-            assert self.session.auth, 'Must specify api_key.'
+            assert self.session.auth, "Must specify api_key."
 
-        headers = kwargs.pop('headers', {})
+        headers = kwargs.pop("headers", {})
         if data:
-            headers.update({
-                'Content-Type': 'application/json'
-            })
+            headers.update({"Content-Type": "application/json"})
 
-        kwargs.update({
-            'auth': auth,
-            'headers': headers,
-            'json': data
-        })
-        request = requests.Request(method_name, self.base_url + endpoint,
-                                   **kwargs)
+        kwargs.update({"auth": auth, "headers": headers, "json": data})
+        request = requests.Request(method_name, self.base_url + endpoint, **kwargs)
         prepped_request = self.session.prepare_request(request)
 
         if debug:
@@ -91,18 +101,29 @@ class API(object):
 
         return prepped_request
 
-    def _dispatch(self, method_name, endpoint, api_key=None, data=None,
-                  debug=False, timeout=None, **kwargs):
+    def _dispatch(
+        self,
+        method_name: RequestMethod,
+        endpoint: str,
+        api_key: Optional[str] = None,
+        data: Optional[Dict[Any, Any]] = None,
+        debug: bool = False,
+        timeout: Optional[int] = None,
+        **kwargs: Any
+    ) -> Any:
         """Prepare and send a request with given parameters. Return a
         dict containing the response data or raise an exception if any
         errors occurred.
         """
-        prepped_req = self._prepare_request(method_name, endpoint, api_key,
-                                            data, debug, **kwargs)
+        prepped_req = self._prepare_request(
+            method_name, endpoint, api_key, data, debug, **kwargs
+        )
 
         for retry_count in range(self.max_retries):
             try:
-                response = self.session.send(prepped_req, verify=self.verify, timeout=timeout)
+                response = self.session.send(
+                    prepped_req, verify=self.verify, timeout=timeout
+                )
             except requests.exceptions.ConnectionError:
                 if retry_count + 1 == self.max_retries:
                     raise
@@ -111,19 +132,21 @@ class API(object):
                 # Check if request was rate limited.
                 if response.status_code == 429:
                     sleep_time = self._get_rate_limit_sleep_time(response)
-                    logging.debug('Request was rate limited, sleeping %d seconds', sleep_time)
+                    logging.debug(
+                        "Request was rate limited, sleeping %d seconds", sleep_time
+                    )
                     time.sleep(sleep_time)
                     continue
-                
-                # Retry 503 errors or 502 or 504 erors on GET requests. 
+
+                # Retry 503 errors or 502 or 504 erors on GET requests.
                 elif response.status_code == 503 or (
-                    method_name == 'get' and response.status_code in (502, 504)
+                    method_name == "get" and response.status_code in (502, 504)
                 ):
                     sleep_time = self._get_randomized_sleep_time_for_error(
                         response.status_code, retry_count
                     )
                     logging.debug(
-                        'Request hit a {}, sleeping for {} seconds'.format(
+                        "Request hit a {}, sleeping for {} seconds".format(
                             response.status_code, sleep_time
                         )
                     )
@@ -134,26 +157,24 @@ class API(object):
                 break
 
         if response.ok:
-            # 204 responses have no content. 
+            # 204 responses have no content.
             if response.status_code == 204:
-                return ''
+                return ""
             return response.json()
         elif response.status_code == 400:
             raise ValidationError(response)
         else:
             raise APIError(response)
 
-    def _get_rate_limit_sleep_time(self, response):
+    def _get_rate_limit_sleep_time(self, response: requests.Response) -> float:
         """Get rate limit window expiration time from response if the response
-        status code is 429. 
+        status code is 429.
         """
         with contextlib.suppress(KeyError):
             rate_limit = response.headers["RateLimit"]
             # we don't actually need all these values, but per the RFC:
             # "Malformed RateLimit header fields MUST be ignored."
-            match = re.match(
-                r"limit=(\d+), remaining=(\d+), reset=(\d+)", rate_limit
-            )
+            match = re.match(r"limit=(\d+), remaining=(\d+), reset=(\d+)", rate_limit)
             if match:
                 limit, remaining, reset = match.groups()
                 return float(reset)
@@ -164,24 +185,32 @@ class API(object):
         with contextlib.suppress(KeyError):
             return float(response.headers["RateLimit-Reset"])
 
-        logging.exception('Error parsing rate limiting response')
+        logging.exception("Error parsing rate limiting response")
         return DEFAULT_RATE_LIMIT_DELAY
 
-    def _get_randomized_sleep_time_for_error(self, status_code, retries):
+    def _get_randomized_sleep_time_for_error(
+        self, status_code: int, retries: int
+    ) -> Union[int, float]:
         """Get sleep time for a given status code before we can try the
         request again.
-        
-        Each time we retry, we want to increase the time before we try again. 
+
+        Each time we retry, we want to increase the time before we try again.
         """
         if status_code == 503:
             return uniform(2, 4) * (retries + 1)
-        
+
         elif status_code in (502, 504):
             return uniform(60, 90) * (retries + 1)
-        
+
         return DEFAULT_RATE_LIMIT_DELAY
-        
-    def get(self, endpoint, params=None, timeout=None, **kwargs):
+
+    def get(
+        self,
+        endpoint: str,
+        params: Optional[Dict[Any, Any]] = None,
+        timeout: Optional[int] = None,
+        **kwargs: Any
+    ) -> Any:
         """Send a GET request to a given endpoint, for example:
 
         >>> api.get('lead', {'query': 'status:"Potential"'})
@@ -193,10 +222,16 @@ class API(object):
             ]
         }
         """
-        kwargs.update({'params': params})
-        return self._dispatch('get', endpoint+'/', timeout=timeout, **kwargs)
+        kwargs.update({"params": params})
+        return self._dispatch("get", endpoint + "/", timeout=timeout, **kwargs)
 
-    def post(self, endpoint, data, timeout=None, **kwargs):
+    def post(
+        self,
+        endpoint: str,
+        data: Dict[Any, Any],
+        timeout: Optional[int] = None,
+        **kwargs: Any
+    ) -> Any:
         """Send a POST request to a given endpoint, for example:
 
         >>> api.post('lead', {'name': 'Brand New Lead'})
@@ -205,10 +240,16 @@ class API(object):
             # ... rest of the response omitted for brevity
         }
         """
-        kwargs.update({'data': data})
-        return self._dispatch('post', endpoint+'/', timeout=timeout, **kwargs)
+        kwargs.update({"data": data})
+        return self._dispatch("post", endpoint + "/", timeout=timeout, **kwargs)
 
-    def put(self, endpoint, data, timeout=None, **kwargs):
+    def put(
+        self,
+        endpoint: str,
+        data: Dict[Any, Any],
+        timeout: Optional[int] = None,
+        **kwargs: Any
+    ) -> Any:
         """Send a PUT request to a given endpoint, for example:
 
         >>> api.put('lead/SOME_LEAD_ID', {'name': 'New Name'})
@@ -217,38 +258,51 @@ class API(object):
             # ... rest of the response omitted for brevity
         }
         """
-        kwargs.update({'data': data})
-        return self._dispatch('put', endpoint+'/', timeout=timeout, **kwargs)
+        kwargs.update({"data": data})
+        return self._dispatch("put", endpoint + "/", timeout=timeout, **kwargs)
 
-    def delete(self, endpoint, timeout=None, **kwargs):
+    def delete(
+        self, endpoint: str, timeout: Optional[int] = None, **kwargs: Any
+    ) -> Any:
         """Send a DELETE request to a given endpoint, for example:
 
         >>> api.delete('lead/SOME_LEAD_ID')
         {}
         """
-        return self._dispatch('delete', endpoint+'/', timeout=timeout, **kwargs)
+        return self._dispatch("delete", endpoint + "/", timeout=timeout, **kwargs)
 
-    def _print_request(self, req):
+    def _print_request(self, req: requests.PreparedRequest) -> None:
         """Print a human-readable representation of a request."""
-        print('{}\n{}\n{}\n\n{}\n{}'.format(
-            '----------- HTTP Request -----------',
-            req.method + ' ' + req.url,
-            '\n'.join('{}: {}'.format(k, v) for k, v in req.headers.items()),
-            req.body or '',
-            '----------- /HTTP Request -----------'
-        ))
+        print(
+            "{}\n{}\n{}\n\n{}\n{}".format(
+                "----------- HTTP Request -----------",
+                req.method + " " + req.url,  # type: ignore
+                "\n".join("{}: {}".format(k, v) for k, v in req.headers.items()),
+                req.body or "",
+                "----------- /HTTP Request -----------",
+            )
+        )
 
 
 class Client(API):
-    def __init__(self, api_key=None, tz_offset=None, max_retries=5,
-                 development=False):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        tz_offset: Optional[str] = None,
+        max_retries: int = 5,
+        development: bool = False,
+    ) -> None:
         if development:
-            base_url = 'https://local-api.close.com:5001/api/v1/'
+            base_url = "https://local-api.close.com:5001/api/v1/"
             # See https://github.com/kennethreitz/requests/issues/2966
             verify = False
         else:
-            base_url = 'https://api.close.com/api/v1/'
+            base_url = "https://api.close.com/api/v1/"
             verify = True
-        super(Client, self).__init__(base_url, api_key, tz_offset=tz_offset,
-                                     max_retries=max_retries, verify=verify)
-
+        super(Client, self).__init__(
+            base_url,
+            api_key,
+            tz_offset=tz_offset,
+            max_retries=max_retries,
+            verify=verify,
+        )
